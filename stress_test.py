@@ -119,7 +119,6 @@ def requests_call_llm(content_str, thread_id):
             if response.status_code == 200:
                 first_token_time = 0    # 首token时间
                 token_cnt = 0   # token个数
-                answer_len = 0  #中文字数
                 for chunk in response.iter_lines():
                     # 逐个token读取
                     token_cnt = token_cnt + 1
