@@ -23,12 +23,14 @@ headers = {
     "Authorization": f"Bearer {api_key}",
     "Cache-Control": "no-store, max-age=0"
 }
-test_equipment = "six_cards"
+test_equipment = "mac_m1_8M"
 model_list = {
+    "mac_m1_8M": "qwen2.5:7b",
     "two_cards": "Qwen/Qwen2-72B-Instruct-GPTQ-Int4",  # 两块卡
     "six_cards": "Qwen2-72B-Instruct-GPTQ-Int4",  # 六块卡
 }
 base_url_list = {
+    "mac_m1_8M": "http://localhost:11434/v1/chat/completions",  # MacBook M1 8M
     "two_cards": "http://10.8.71.111:8000/v1/chat/completions", # 两块卡
     "six_cards": "http://10.26.63.21:8011/v1/chat/completions",   # 六块卡
 }
@@ -42,7 +44,7 @@ else:
     exit(0)
 
 # 并发数
-concurrent_cnt = 5
+concurrent_cnt = 1
 # 压力测试方法有两种，一种是同时发起多个线程，另一种是因为大模型是流式输出，在输出过程中都会占用资源，所以测试一分钟内相等时间间隔发起多个线程
 in_minute = False
 
@@ -74,14 +76,16 @@ def get_json_data(data_str):
 def chunk_str_detect(chunk_str):
     if chunk_str == '':
         return {"token_value": None, "error": "empty string"}
+    if chunk_str.endswith('[DONE]'):
+        return {"token_value": "[DONE]", "error": "Finish"}
     if chunk_str.startswith("data:"):
         chunk_data_str = chunk_str[5:].strip()
         if chunk_data_str:  # 确保有数据
             # 解析数据
             chunk_data = json.loads(chunk_data_str)
             # 查看流中的每个块，通常模型返回的格式中会有 `choices` 字段
-            if "role" in chunk_data['choices'][0]['delta']:
-                return {"token_value": None, "error": "assistant"}
+            # if "role" in chunk_data['choices'][0]['delta']:
+            #     return {"token_value": None, "error": "assistant"}
             if "choices" in chunk_data:
                 # 获取流中的第一个 token
                 if "content" in chunk_data['choices'][0]['delta']:
@@ -120,13 +124,17 @@ def requests_call_llm(content_str, thread_id):
                 first_token_time = 0    # 首token时间
                 token_cnt = 0   # token个数
                 for chunk in response.iter_lines():
+                    if len(chunk) == 0:
+                        continue
                     # 逐个token读取
                     token_cnt = token_cnt + 1
                     if first_token_time == 0:
                         first_token_time = time.time() - start
                     # 解码每一块数据，并解析 JSON
                     chunk_str = str(chunk.decode("utf-8"))
-                    if chunk_str == 'data: [DONE]':
+                    chunk_value = chunk_str_detect(chunk_str)["token_value"]
+                    print(chunk_str)
+                    if chunk_value == '[DONE]':
                         # 最后一个结束token
                         finish_time = time.time() - start
                         return_dict = {"thread_id":thread_id, "start_time": int(start), "first_token_time": first_token_time,
